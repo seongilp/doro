@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "build:paths": "node scripts/build-conzone-paths.mjs"
   },
   "dependencies": {
     "@types/leaflet": "^1.9.22",

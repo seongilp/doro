@@ -4,10 +4,19 @@
  * 영업소·IC 좌표를 앵커로 삼고, 좌표를 모르는 분기점(JC)은 앵커 사이에서 선형 보간한다.
  */
 
+import conzonePathData from '@/data/conzone-paths.json';
 import unitData from '@/data/units.json';
 import type { ConzoneSegment, LatLng, RawConzone, UnitLocation } from './types';
 
 const units = unitData as readonly UnitLocation[];
+
+/**
+ * scripts/build-conzone-paths.mjs가 미리 계산해 둔 실제 도로 선형.
+ * OpenStreetMap 고속도로 폴리라인 위에 콘존 양 끝을 스냅해 잘라낸 결과다.
+ */
+const roadPaths = conzonePathData as unknown as Readonly<
+  Record<string, readonly LatLng[]>
+>;
 
 /** 대한민국 대략 경계. 일부 영업소는 좌표가 null이라 0,0으로 잘못 읽히는 것을 걸러낸다. */
 const KOREA_BOUNDS = { minLat: 33, maxLat: 39, minLng: 124, maxLng: 132 } as const;
@@ -165,6 +174,12 @@ function mean(values: readonly number[]): number {
   return values.reduce((sum, v) => sum + v, 0) / values.length;
 }
 
+/** 콘존명을 시점·종점으로 나눈다. 구분자는 '-' 또는 '~'. */
+function splitConzoneName(name: string): readonly [string, string] {
+  const parts = name.split(/[-~]/);
+  return parts.length === 2 ? [parts[0], parts[1]] : ['', ''];
+}
+
 /** 실시간 콘존 행들을 지도에 그릴 수 있는 구간 목록으로 변환한다. */
 export function buildSegments(rows: readonly RawConzone[]): readonly ConzoneSegment[] {
   const groups = new Map<string, AggregatedConzone[]>();
@@ -183,22 +198,32 @@ export function buildSegments(rows: readonly RawConzone[]): readonly ConzoneSegm
     );
 
     // 노드 = 각 콘존의 시점 + 마지막 콘존의 종점
-    const nodeNames = ordered.map((item) => item.row.conzoneName.split('-')[0] ?? '');
+    const nodeNames = ordered.map((item) => splitConzoneName(item.row.conzoneName)[0]);
     const last = ordered[ordered.length - 1];
-    nodeNames.push(last.row.conzoneName.split('-')[1] ?? '');
+    nodeNames.push(splitConzoneName(last.row.conzoneName)[1]);
 
     const routeName = ordered[0].row.routeName;
     const known = resolveNodes(nodeNames, routeName);
-    if (known.filter(Boolean).length < 2) continue;
+    const hasRoadPath = ordered.some((item) => roadPaths[item.row.conzoneId]);
+    if (known.filter(Boolean).length < 2 && !hasRoadPath) continue;
 
     const points = fillGaps(known);
 
     ordered.forEach((item, i) => {
+      // 실제 도로 선형이 있으면 그것을 쓰고, 없을 때만 앵커 직선으로 대체한다.
+      const road = roadPaths[item.row.conzoneId];
       const start = points[i];
       const end = points[i + 1];
-      if (!start || !end) return;
-      if (start[0] === end[0] && start[1] === end[1]) return;
-      if (distanceKm(start, end) > MAX_SEGMENT_KM) return;
+
+      let path: readonly LatLng[];
+      if (road && road.length >= 2) {
+        path = road;
+      } else {
+        if (!start || !end) return;
+        if (start[0] === end[0] && start[1] === end[1]) return;
+        if (distanceKm(start, end) > MAX_SEGMENT_KM) return;
+        path = [start, end];
+      }
 
       segments.push({
         id: item.row.conzoneId,
@@ -209,7 +234,7 @@ export function buildSegments(rows: readonly RawConzone[]): readonly ConzoneSegm
         speed: item.speeds.length > 0 ? Math.round(mean(item.speeds)) : -1,
         traffic: Math.round(mean(item.traffic)),
         grade: item.grade,
-        path: [start, end],
+        path,
       });
     });
   }

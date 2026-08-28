@@ -31,18 +31,18 @@ const PIPELINE = [
   },
   {
     step: '02',
-    title: '좌표 결합',
-    body: '소통정보에는 좌표가 없어, 영업소·IC 위치 590곳을 앵커로 붙입니다.',
+    title: '도로 선형 확보',
+    body: 'OpenStreetMap에서 전국 고속도로 way를 받아 노선별 폴리라인으로 이어 붙입니다.',
   },
   {
     step: '03',
-    title: '분기점 보간',
-    body: '좌표가 없는 분기점(JC)은 콘존 순번을 따라 앵커 사이에서 선형 보간합니다.',
+    title: '앵커 스냅',
+    body: '영업소·IC·분기점 위치를 도로 위에 스냅하고, 차로가 번갈아 잡히지 않도록 노선 전체에서 일관되게 배정합니다.',
   },
   {
     step: '04',
-    title: '이상치 제거',
-    body: '한반도 밖 좌표, 동명 IC 오매칭, 비정상적으로 긴 구간을 걸러냅니다.',
+    title: '구간 절단',
+    body: '두 앵커 사이의 도로 조각을 잘라 콘존 경로로 씁니다. 전체 콘존의 92%가 실제 도로 선형을 따릅니다.',
   },
 ] as const;
 
@@ -114,8 +114,8 @@ export default async function Landing() {
 
           <p className="mt-5 max-w-xl text-sm leading-relaxed text-slate-400">
             한국도로공사 실시간 소통정보를 OpenStreetMap 위에 구간별로 그립니다. 좌표가 없는
-            원본 데이터를 영업소·IC 위치와 결합하고 분기점을 보간해, 전국 노선을 정체 색상으로
-            바로 읽을 수 있게 만들었습니다.
+            원본 데이터를 실제 고속도로 선형에 스냅해, 전국 노선을 도로 모양 그대로 정체
+            색상으로 읽을 수 있게 만들었습니다.
           </p>
 
           <div className="mt-8 flex flex-wrap gap-3">
@@ -189,8 +189,8 @@ export default async function Landing() {
       <section id="how" className="mx-auto max-w-5xl px-6 py-14">
         <h2 className="text-xl font-semibold tracking-tight">데이터가 지도가 되기까지</h2>
         <p className="mt-2 max-w-xl text-sm text-slate-400">
-          도로공사 실시간 소통정보에는 위경도가 없습니다. 콘존 이름과 순번을 이용해 좌표를
-          복원하는 것이 이 프로젝트의 핵심입니다.
+          도로공사 실시간 소통정보에는 위경도가 없습니다. 콘존 이름을 OpenStreetMap 도로 선형
+          위에 얹어 실제 형상을 복원하는 것이 이 프로젝트의 핵심입니다.
         </p>
         <ol className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {PIPELINE.map((item) => (
@@ -228,8 +228,8 @@ export default async function Landing() {
             </code>
           </li>
           <li>
-            <span className="text-slate-200">배경 지도</span> — OpenStreetMap contributors ·
-            CARTO 다크 타일
+            <span className="text-slate-200">도로 선형 · 배경 지도</span> — OpenStreetMap
+            contributors (ODbL)
           </li>
         </ul>
         <p className="mt-6 text-xs text-slate-600">

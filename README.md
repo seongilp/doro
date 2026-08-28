@@ -13,17 +13,27 @@
 한국도로공사의 실시간 소통정보(`odtraffic/trafficAmountByRealtime`)는 콘존(구간)별 속도와
 교통량을 주지만 **위경도가 없다**. 콘존은 `구서IC-영락IC` 처럼 시·종점 이름으로만 식별된다.
 
-그래서 좌표를 이렇게 복원한다.
+IC 좌표만 직선으로 이으면 수도권제1순환선이 서울 도심을 가로지르는 사각형이 된다.
+그래서 OpenStreetMap의 실제 고속도로 선형 위에 구간을 얹는다 —
+`scripts/build-conzone-paths.mjs`가 하는 일이다.
 
 | 단계 | 내용 |
 | --- | --- |
-| 1 | 영업소·IC 위치 590곳(`locationinfo/locationinfoUnit`)을 앵커로 확보 |
-| 2 | 콘존명을 시·종점으로 쪼개고 시설 접미사(IC/JC/TG/하이패스)를 정규화해 매칭 |
-| 3 | 좌표가 없는 분기점(JC)은 `conzoneId` 순번을 따라 앵커 사이에서 선형 보간 |
-| 4 | 한반도 밖 좌표, 동명 IC 오매칭(60km 초과), 비정상적으로 긴 구간(80km 초과)을 제거 |
+| 1 | Overpass API로 국내 `highway=motorway` way 20,672개(12만 점)를 받는다 |
+| 2 | 노드 id를 공유하는 way를 이어 붙여 노선별 폴리라인(상·하행 차로 등 컴포넌트)으로 만든다 |
+| 3 | 앵커를 모은다 — 도로공사 영업소 590곳 + OSM 분기점 노드 3,132개 |
+| 4 | 콘존명을 시·종점으로 쪼개 앵커를 찾고 각 컴포넌트에 스냅한다 |
+| 5 | Viterbi로 노선 전체의 차로 배정을 정한다 (가장 가까운 차로만 고르면 구간마다 상·하행이 번갈아 잡힌다) |
+| 6 | 앵커가 없는 노드는 이웃 사이의 주행거리로 보간·외삽하고, 두 지점 사이의 도로 조각을 잘라낸다 |
 
-결과적으로 1,579개 콘존 중 약 1,080개 구간에 신뢰할 수 있는 지오메트리가 붙는다.
-구현은 `lib/geometry.ts`에 있다.
+결과: 1,579개 콘존 중 **1,454개(92%)** 가 실제 도로 선형을 따른다. 나머지는 앵커 직선으로 대체된다.
+
+산출물은 `data/conzone-paths.json`(327KB)에 커밋되어 있고, 런타임은 `lib/geometry.ts`에서
+콘존 id로 조회만 한다. 노선이 바뀌면 다시 생성한다.
+
+```bash
+npm run build:paths
+```
 
 ## 기능
 
@@ -50,6 +60,7 @@ API 키는 [공공데이터 포털(data.ex.co.kr)](https://data.ex.co.kr/portal/
 | 실시간 소통정보 | `odtraffic/trafficAmountByRealtime` |
 | 전국 통행량 집계 | `trafficapi/trafficAll` |
 | 영업소·IC 좌표 | `locationinfo/locationinfoUnit` (`data/units.json`에 스냅숏) |
+| 고속도로 선형 · 분기점 | OpenStreetMap / Overpass API (ODbL) |
 | 배경 지도 | OpenStreetMap 표준 타일 |
 
 ## 구현 노트
@@ -58,6 +69,7 @@ API 키는 [공공데이터 포털(data.ex.co.kr)](https://data.ex.co.kr/portal/
 - **인메모리 캐시** — 실시간 응답이 약 3MB라 Next.js 데이터 캐시(2MB 한도)에 들어가지 않는다. `lib/memo-cache.ts`가 프로세스 수준에서 60초간 재사용하고 동시 요청을 합친다.
 - **오프라인 픽스처** — WAF에 일시 차단되면 `EX_FIXTURE_DIR`에 저장한 응답으로 개발할 수 있다 (운영에서는 무시).
 - **다크 지도** — OSM 표준 타일에 CSS 필터(`.leaflet-tile-pane`)로 다크 톤을 입힌다. 구간 선은 overlay pane이라 영향받지 않는다.
+- **IC와 JC는 다른 지점** — `노포IC`와 `노포JC`는 수백 m 떨어져 있다. 접미사를 통째로 떼면 같은 앵커로 붙어 길이 0인 구간이 된다. 시설 종류를 남긴 키로 먼저 찾고, 실패할 때만 이름만으로 되돌아간다.
 
 ## 주의
 
