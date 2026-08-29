@@ -2,6 +2,11 @@ import { NextResponse } from 'next/server';
 import { ExApiError } from '@/lib/ex-api';
 import { getTrafficSummary, SUMMARY_CACHE_HEADER } from '@/lib/traffic-service';
 
+/** 요청마다 함수를 깨우지 않고 엣지 정적 캐시에서 바로 나가게 한다. */
+export const dynamic = 'force-static';
+// SUMMARY_REVALIDATE_SECONDS와 같은 값.
+export const revalidate = 300;
+
 export async function GET() {
   try {
     const summary = await getTrafficSummary();
