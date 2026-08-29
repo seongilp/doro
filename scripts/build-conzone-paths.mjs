@@ -78,12 +78,36 @@ async function loadConzones() {
   });
 }
 
+/**
+ * 이름이 붙은 자동차전용도로 전체.
+ * "…고속도로"만 받으면 신월여의지하도로처럼 trunk로 태깅된 노선이 빠진다.
+ * 램프(motorway_link)는 스티칭을 헝클어뜨리므로 제외한다.
+ */
 const loadWays = () =>
-  cachedFetch('ways.json', () =>
+  cachedFetch('named-ways.json', () =>
     overpass(
-      `[out:json][timeout:600];way["highway"="motorway"]["name"~"고속도로"](${KOREA_BBOX});out geom qt;`,
+      `[out:json][timeout:600];way["highway"~"^(motorway|motorway_link|trunk)$"]["name"](${KOREA_BBOX});out geom qt;`,
     ),
   );
+
+/**
+ * 1차 조회에서 앵커를 못 찾은 이름만 OSM에서 직접 찾는다.
+ *
+ * 터널·지하차도·교량 같은 VDS 기준점은 OSM에 이름만 붙은 노드로 들어가 있어
+ * 태그로는 걸러낼 수 없다. 그래서 필요한 이름을 알고 나서 이름으로 조회한다.
+ */
+async function loadNamedPoints(names) {
+  if (names.length === 0) return { elements: [] };
+  const key = `named-${names.length}.json`;
+  return cachedFetch(key, () => {
+    const pattern = names
+      .map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+      .join('|');
+    return overpass(
+      `[out:json][timeout:300];(node["name"~"^(${pattern})$"](${KOREA_BBOX});way["name"~"^(${pattern})$"](${KOREA_BBOX}););out center qt;`,
+    );
+  });
+}
 
 const loadJunctions = () =>
   cachedFetch('junctions.json', () =>
@@ -105,7 +129,12 @@ const FACILITY_SUFFIXES = [
 ];
 
 function cleanName(name) {
-  return name.replace(/\s/g, '').replace(/하이패스/g, 'Hi').replace(/본선$/, '');
+  return name
+    .replace(/\s/g, '')
+    // 도로공사는 "창원1터널(동측)", OSM은 "창원1터널 동측"으로 적는다.
+    .replace(/[()]/g, '')
+    .replace(/하이패스/g, 'Hi')
+    .replace(/본선$/, '');
 }
 
 /** "서영천하이패스IC" → "서영천Hi#IC" (시설 종류를 남긴 정밀 키) */
@@ -123,6 +152,24 @@ function baseKey(name) {
 }
 
 /**
+ * OSM 표기 차이를 흡수한 이름 후보들.
+ * "남용인(원삼)" → "남용인", "서김포·통진" → "서김포", "통진" 처럼
+ * 괄호 보충 설명과 병기 표기를 풀어 준다.
+ */
+function nameVariants(name) {
+  const variants = new Set([name]);
+  const withoutParens = name.replace(/\([^)]*\)/g, '').trim();
+  if (withoutParens) variants.add(withoutParens);
+  for (const variant of [...variants]) {
+    for (const part of variant.split(/[·・]/)) {
+      const trimmed = part.trim();
+      if (trimmed) variants.add(trimmed);
+    }
+  }
+  return [...variants];
+}
+
+/**
  * 앵커 색인을 만든다.
  * 정밀 키(시설 종류 포함)와 느슨한 키(이름만)를 모두 넣고, 조회할 때 정밀 → 느슨 순으로 찾는다.
  */
@@ -136,7 +183,9 @@ function buildAnchorIndex(units, junctions) {
   for (const node of junctions.elements) {
     const name = node.tags?.name ?? node.tags?.['name:ko'];
     if (!name) continue;
-    add(facilityKey(name), [node.lat, node.lon]);
+    for (const variant of nameVariants(name)) {
+      add(facilityKey(variant), [node.lat, node.lon]);
+    }
   }
 
   // 도로공사 영업소 목록은 접미사가 없어 느슨한 키로만 쓴다. 대신 노선까지 맞출 수 있다.
@@ -152,10 +201,25 @@ function buildAnchorIndex(units, junctions) {
 
   for (const node of junctions.elements) {
     const name = node.tags?.name ?? node.tags?.['name:ko'];
-    if (name) add(baseKey(name), [node.lat, node.lon]);
+    if (!name) continue;
+    for (const variant of nameVariants(name)) add(baseKey(variant), [node.lat, node.lon]);
   }
 
   return index;
+}
+
+/** 이름으로 찾아온 노드·way를 앵커 색인에 보탠다. */
+function addNamedPoints(index, elements) {
+  for (const element of elements) {
+    const name = element.tags?.name ?? element.tags?.['name:ko'];
+    if (!name) continue;
+    const lat = element.lat ?? element.center?.lat;
+    const lon = element.lon ?? element.center?.lon;
+    if (!isInKorea(lat, lon)) continue;
+    for (const key of [facilityKey(name), baseKey(name)]) {
+      if (key && !index.has(key)) index.set(key, [lat, lon]);
+    }
+  }
 }
 
 /** 정밀 키 → 노선 일치 → 느슨한 키 순으로 앵커를 찾는다. */
@@ -242,22 +306,34 @@ function stitchWays(ways) {
   return components.sort((a, b) => b.length - a.length);
 }
 
+/**
+ * 도로 이름별 way 묶음. 스티칭은 실제로 필요한 노선에 대해서만 한다
+ * (이름 붙은 도로가 5만 개가 넘어 전부 이어 붙이면 낭비다).
+ */
 function buildRouteIndex(waysJson) {
   const byName = new Map();
   for (const way of waysJson.elements) {
     const name = way.tags?.name;
     if (!name || !way.geometry || !way.nodes) continue;
+    if (way.tags.highway === 'motorway_link') continue;
     for (const part of name.split(';')) {
       const list = byName.get(part);
       if (list) list.push(way);
       else byName.set(part, [way]);
     }
   }
-  const routes = new Map();
-  for (const [name, ways] of byName) {
-    routes.set(name, stitchWays(ways));
-  }
-  return routes;
+
+  const cache = new Map();
+  return {
+    names: [...byName.keys()],
+    componentsFor(name) {
+      if (!cache.has(name)) {
+        const ways = byName.get(name);
+        cache.set(name, ways ? stitchWays(ways) : []);
+      }
+      return cache.get(name);
+    },
+  };
 }
 
 /** 닫힌 노선(순환선)에서는 짧은 쪽 호를 고른다. */
@@ -347,7 +423,7 @@ function assignComponents(pairs) {
 
 /** 콘존명을 시점·종점으로 나눈다. 구분자는 '-' 또는 '~'. */
 function splitConzoneName(name) {
-  const parts = name.split(/[-~]/);
+  const parts = name.split(/[-~]/).map((part) => part.trim());
   return parts.length === 2 ? parts : null;
 }
 
@@ -361,9 +437,39 @@ async function main() {
 
   const units = JSON.parse(unitsRaw);
   const anchors = buildAnchorIndex(units, junctionsJson);
+
+  // 1차 색인에 없는 끝점 이름을 모아 OSM에서 이름으로 직접 찾아 보탠다.
+  const unresolved = new Set();
+  for (const row of conzoneJson.list) {
+    for (const name of splitConzoneName(row.conzoneName) ?? []) {
+      if (!name) continue;
+      if (!anchors.has(facilityKey(name)) && !anchors.has(baseKey(name))) {
+        unresolved.add(name);
+      }
+    }
+  }
+  if (unresolved.size > 0) {
+    // 선택적 보강이다. Overpass가 막히면 건너뛰고 나머지로 진행한다.
+    try {
+      const found = await loadNamedPoints([...unresolved]);
+      addNamedPoints(anchors, found.elements ?? []);
+    } catch (error) {
+      console.log('이름 조회 건너뜀:', error.message);
+    }
+    const stillMissing = [...unresolved].filter(
+      (n) => !anchors.has(facilityKey(n)) && !anchors.has(baseKey(n)),
+    );
+    console.log(
+      `끝점 이름 ${unresolved.size}개 미해결 → ${unresolved.size - stillMissing.length}개 보강`,
+    );
+    if (stillMissing.length > 0) {
+      console.log('  못 찾음:', stillMissing.slice(0, 10).join(', '));
+    }
+  }
+
   const routes = buildRouteIndex(waysJson);
 
-  const routeNames = [...routes.keys()];
+  const routeNames = routes.names;
   const conzones = [...new Map(conzoneJson.list.map((r) => [r.conzoneId, r])).values()];
 
   // 노선+방향별로 콘존 순번대로 정렬한다.
@@ -393,8 +499,8 @@ async function main() {
   for (const bucket of groups.values()) {
     const ordered = [...bucket].sort((a, b) => a.conzoneId.localeCompare(b.conzoneId));
     const routeName = ordered[0].routeName;
-    const components = osmNamesForRoute(routeName, routeNames).flatMap(
-      (name) => routes.get(name) ?? [],
+    const components = osmNamesForRoute(routeName, routeNames).flatMap((name) =>
+      routes.componentsFor(name),
     );
 
     if (components.length === 0) {
