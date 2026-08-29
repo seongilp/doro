@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useRef } from 'react';
 import type { ConzoneStatus } from '@/lib/types';
 import { styleForSpeed } from '@/lib/traffic-style';
 
@@ -10,9 +11,16 @@ interface Props {
 
 export default function SegmentDetail({ segment, onClose }: Props) {
   const style = styleForSpeed(segment.speed);
+  const container = useRef<HTMLDivElement>(null);
+
+  // 모바일에서는 상세 카드가 필터 아래에 있어 화면 밖일 수 있다.
+  // 이미 보이는 경우(데스크톱)에는 아무 일도 일어나지 않는다.
+  useEffect(() => {
+    container.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [segment.id]);
 
   return (
-    <div className="rounded-lg border border-slate-800 bg-slate-900/90 p-3">
+    <div ref={container} className="rounded-lg border border-slate-800 bg-slate-900/90 p-3">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold text-slate-100">{segment.name}</p>

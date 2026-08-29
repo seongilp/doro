@@ -82,18 +82,19 @@ export default function Dashboard({ initialSnapshot, initialSummary }: Props) {
 
   return (
     <main className="flex h-dvh flex-col bg-slate-950 text-slate-100">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 px-4 py-3">
-        <div>
-          <h1 className="text-base font-semibold">
+      <header className="flex items-center justify-between gap-2 border-b border-slate-800 px-3 py-2 sm:px-4 sm:py-3">
+        <div className="min-w-0">
+          <h1 className="truncate text-sm font-semibold sm:text-base">
             전국 실시간 교통량 <span className="text-sky-500">DORO</span>
           </h1>
-          <p className="text-[11px] text-slate-500">
-            한국도로공사 공공데이터 · OpenStreetMap · {updatedLabel} ·{' '}
-            {filtered.length.toLocaleString('ko-KR')} / {conzones.length.toLocaleString('ko-KR')} 구간
+          <p className="truncate text-[11px] text-slate-500">
+            <span className="hidden sm:inline">한국도로공사 공공데이터 · OpenStreetMap · </span>
+            {updatedLabel} · {filtered.length.toLocaleString('ko-KR')} /{' '}
+            {conzones.length.toLocaleString('ko-KR')} 구간
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           <label className="flex cursor-pointer items-center gap-1.5 text-xs text-slate-400">
             <input
               type="checkbox"
@@ -101,7 +102,7 @@ export default function Dashboard({ initialSnapshot, initialSummary }: Props) {
               onChange={(e) => setAutoRefresh(e.target.checked)}
               className="accent-sky-500"
             />
-            자동 갱신 (1분)
+            자동 갱신<span className="hidden sm:inline"> (1분)</span>
           </label>
           <button
             type="button"
@@ -124,7 +125,7 @@ export default function Dashboard({ initialSnapshot, initialSummary }: Props) {
       ) : null}
 
       <div className="flex min-h-0 flex-1 flex-col-reverse lg:flex-row">
-        <aside className="flex w-full shrink-0 flex-col gap-3 overflow-y-auto border-slate-800 p-3 lg:w-96 lg:border-r">
+        <aside className="flex min-h-0 w-full flex-1 flex-col gap-3 overflow-y-auto border-slate-800 p-3 lg:w-96 lg:flex-none lg:shrink-0 lg:border-r">
           <StatsBar conzones={filtered} summary={summary.data} />
           <FilterPanel
             filters={filters}
@@ -170,15 +171,17 @@ export default function Dashboard({ initialSnapshot, initialSummary }: Props) {
           )}
         </aside>
 
-        <section className="relative min-h-[55dvh] flex-1">
+        <section className="relative h-[45dvh] shrink-0 lg:h-auto lg:flex-1">
           <TrafficMap
             conzones={filtered}
             selectedId={selected?.id ?? null}
             onSelect={setSelected}
           />
-          <div className="pointer-events-none absolute bottom-4 left-4 z-[1000] rounded-lg border border-slate-700 bg-slate-900/85 px-3 py-2">
-            <p className="mb-1 text-[10px] uppercase tracking-wide text-slate-500">소통 상태</p>
-            <ul className="flex gap-3">
+          <div className="pointer-events-none absolute bottom-2 left-2 z-[1000] rounded-lg border border-slate-700 bg-slate-900/85 px-2 py-1.5 sm:bottom-4 sm:left-4 sm:px-3 sm:py-2">
+            <p className="mb-1 hidden text-[10px] uppercase tracking-wide text-slate-500 sm:block">
+              소통 상태
+            </p>
+            <ul className="flex gap-2 sm:gap-3">
               {LEVELS.map((level) => (
                 <li key={level.level} className="flex items-center gap-1.5 text-[11px] text-slate-300">
                   <span
