@@ -8,7 +8,8 @@ import SegmentDetail from '@/components/SegmentDetail';
 import StatsBar from '@/components/StatsBar';
 import SummaryBreakdown from '@/components/SummaryBreakdown';
 import { LEVELS, levelForSpeed } from '@/lib/traffic-style';
-import type { ConzoneStatus, TrafficSnapshot, TrafficSummary } from '@/lib/types';
+import type { ConzoneStatus, TrafficSummary } from '@/lib/types';
+import { decodeSnapshot, type WireSnapshot } from '@/lib/wire';
 import { usePollingResource } from '@/lib/use-polling-resource';
 
 const TrafficMap = dynamic(() => import('@/components/TrafficMap'), {
@@ -25,7 +26,7 @@ const SUMMARY_INTERVAL_MS = 300_000;
 
 interface Props {
   /** 서버에서 미리 채워 보낸 첫 스냅숏. 첫 화면이 빈 지도로 뜨지 않게 한다. */
-  readonly initialSnapshot: TrafficSnapshot | null;
+  readonly initialSnapshot: WireSnapshot | null;
   readonly initialSummary: TrafficSummary | null;
 }
 
@@ -44,7 +45,7 @@ export default function Dashboard({ initialSnapshot, initialSummary }: Props) {
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [tab, setTab] = useState<Tab>('ranking');
 
-  const traffic = usePollingResource<TrafficSnapshot>('/api/traffic', {
+  const traffic = usePollingResource<WireSnapshot>('/api/traffic', {
     intervalMs: TRAFFIC_INTERVAL_MS,
     enabled: autoRefresh,
     initialData: initialSnapshot,
@@ -55,7 +56,12 @@ export default function Dashboard({ initialSnapshot, initialSummary }: Props) {
     initialData: initialSummary,
   });
 
-  const conzones = useMemo(() => traffic.data?.conzones ?? [], [traffic.data]);
+  // 전송용 튜플을 화면에서 쓰는 형태로 푼다. 스냅숏이 바뀔 때만 다시 계산한다.
+  const snapshot = useMemo(
+    () => (traffic.data ? decodeSnapshot(traffic.data) : null),
+    [traffic.data],
+  );
+  const conzones = useMemo(() => snapshot?.conzones ?? [], [snapshot]);
 
   const filtered = useMemo(() => {
     const query = filters.query.trim().toLowerCase();
@@ -70,8 +76,8 @@ export default function Dashboard({ initialSnapshot, initialSummary }: Props) {
     });
   }, [conzones, filters]);
 
-  const updatedLabel = traffic.data
-    ? `${traffic.data.stdHour.slice(0, 2)}:${traffic.data.stdHour.slice(2, 4)} 기준`
+  const updatedLabel = snapshot
+    ? `${snapshot.stdHour.slice(0, 2)}:${snapshot.stdHour.slice(2, 4)} 기준`
     : '—';
 
   return (
@@ -122,7 +128,7 @@ export default function Dashboard({ initialSnapshot, initialSummary }: Props) {
           <StatsBar conzones={filtered} summary={summary.data} />
           <FilterPanel
             filters={filters}
-            routes={traffic.data?.routes ?? []}
+            routes={snapshot?.routeNames ?? []}
             onChange={setFilters}
           />
 

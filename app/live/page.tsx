@@ -1,6 +1,7 @@
 import Dashboard from '@/components/Dashboard';
 import { getTrafficSnapshot, getTrafficSummary } from '@/lib/traffic-service';
-import type { TrafficSnapshot, TrafficSummary } from '@/lib/types';
+import type { TrafficSummary } from '@/lib/types';
+import type { WireSnapshot } from '@/lib/wire';
 
 /**
  * 첫 스냅숏을 HTML에 실어 보낸다.
@@ -20,7 +21,7 @@ async function loadOrNull<T>(load: () => Promise<T>, label: string): Promise<T |
 
 export default async function LivePage() {
   const [snapshot, summary] = await Promise.all([
-    loadOrNull<TrafficSnapshot>(getTrafficSnapshot, 'traffic'),
+    loadOrNull<WireSnapshot>(getTrafficSnapshot, 'traffic'),
     loadOrNull<TrafficSummary>(getTrafficSummary, 'summary'),
   ]);
 

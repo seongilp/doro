@@ -58,14 +58,6 @@ export interface ConzoneStatus {
 /** 콘존 id → 도로 경로. `data/conzone-paths.json`에서 온다. */
 export type ConzonePathMap = Readonly<Record<string, readonly LatLng[]>>;
 
-export interface TrafficSnapshot {
-  readonly updatedAt: string;
-  readonly stdDate: string;
-  readonly stdHour: string;
-  readonly conzones: readonly ConzoneStatus[];
-  readonly routes: readonly string[];
-}
-
 export interface SummaryBucket {
   readonly label: string;
   readonly amount: number;

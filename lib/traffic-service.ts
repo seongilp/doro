@@ -10,9 +10,9 @@ import type {
   RawConzone,
   RawTrafficAll,
   SummaryBucket,
-  TrafficSnapshot,
   TrafficSummary,
 } from './types';
+import { encodeSnapshot, type WireSnapshot } from './wire';
 
 /** VDS 소통정보는 약 1분 주기로 갱신된다. */
 export const TRAFFIC_REVALIDATE_SECONDS = 60;
@@ -37,7 +37,7 @@ const CAR_TYPE_LABELS: Readonly<Record<string, string>> = {
 
 export class EmptyResponseError extends Error {}
 
-export async function getTrafficSnapshot(): Promise<TrafficSnapshot> {
+export async function getTrafficSnapshot(): Promise<WireSnapshot> {
   const rows = await withCache('odtraffic', TRAFFIC_REVALIDATE_SECONDS * 1000, () =>
     fetchExList<RawConzone>({
       endpoint: 'odtraffic/trafficAmountByRealtime',
@@ -50,18 +50,12 @@ export async function getTrafficSnapshot(): Promise<TrafficSnapshot> {
     throw new EmptyResponseError('도로공사에서 반환한 실시간 소통정보가 비어 있습니다.');
   }
 
-  const conzones = buildConzoneStatuses(rows);
-  const routes = [...new Set(conzones.map((c) => c.routeName))].sort((a, b) =>
-    a.localeCompare(b, 'ko'),
-  );
-
-  return {
+  return encodeSnapshot({
     updatedAt: new Date().toISOString(),
     stdDate: rows[0].stdDate,
     stdHour: rows[0].stdHour,
-    conzones,
-    routes,
-  };
+    conzones: buildConzoneStatuses(rows),
+  });
 }
 
 function sumBy(
