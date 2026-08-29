@@ -10,18 +10,27 @@ export interface PollingResource<T> {
   readonly refresh: () => void;
 }
 
+interface Options<T> {
+  readonly intervalMs: number;
+  readonly enabled: boolean;
+  /** 서버에서 함께 내려준 첫 데이터. 있으면 마운트 직후 재조회하지 않는다. */
+  readonly initialData?: T | null;
+}
+
 /** 지정한 주기로 JSON 엔드포인트를 재조회한다. enabled=false면 자동 갱신을 멈춘다. */
 export function usePollingResource<T>(
   url: string,
-  intervalMs: number,
-  enabled: boolean,
+  { intervalMs, enabled, initialData = null }: Options<T>,
 ): PollingResource<T> {
-  const [data, setData] = useState<T | null>(null);
+  const [data, setData] = useState<T | null>(initialData);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [lastFetchedAt, setLastFetchedAt] = useState<Date | null>(null);
+  const [loading, setLoading] = useState(initialData === null);
+  const [lastFetchedAt, setLastFetchedAt] = useState<Date | null>(
+    initialData === null ? null : new Date(),
+  );
   const [nonce, setNonce] = useState(0);
   const aborted = useRef(false);
+  const skipInitialLoad = useRef(initialData !== null);
 
   const load = useCallback(async () => {
     try {
@@ -47,9 +56,12 @@ export function usePollingResource<T>(
 
   useEffect(() => {
     aborted.current = false;
-    // 데이터 페칭 이펙트. 상태 갱신은 모두 await 이후에 일어나므로 렌더 중 갱신이 아니다.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void load();
+    // 서버가 이미 최신 데이터를 실어 보냈으면 첫 조회를 건너뛴다.
+    if (skipInitialLoad.current) {
+      skipInitialLoad.current = false;
+    } else {
+      void load();
+    }
     return () => {
       aborted.current = true;
     };

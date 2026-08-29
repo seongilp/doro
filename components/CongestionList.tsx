@@ -7,11 +7,13 @@ interface Props {
   readonly segments: readonly ConzoneSegment[];
   readonly selectedId: string | null;
   readonly onSelect: (segment: ConzoneSegment) => void;
+  /** 아직 첫 데이터를 기다리는 중인지. 빈 결과와 구분해서 보여준다. */
+  readonly loading?: boolean;
 }
 
 const MAX_ITEMS = 40;
 
-export default function CongestionList({ segments, selectedId, onSelect }: Props) {
+export default function CongestionList({ segments, selectedId, onSelect, loading }: Props) {
   const ranked = [...segments]
     .filter((s) => s.speed > 0)
     .sort((a, b) => a.speed - b.speed)
@@ -20,7 +22,7 @@ export default function CongestionList({ segments, selectedId, onSelect }: Props
   if (ranked.length === 0) {
     return (
       <p className="px-1 py-6 text-center text-sm text-slate-600">
-        조건에 맞는 구간이 없습니다.
+        {loading ? '실시간 소통정보를 불러오는 중…' : '조건에 맞는 구간이 없습니다.'}
       </p>
     );
   }
