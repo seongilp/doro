@@ -8,7 +8,7 @@ import SegmentDetail from '@/components/SegmentDetail';
 import StatsBar from '@/components/StatsBar';
 import SummaryBreakdown from '@/components/SummaryBreakdown';
 import { LEVELS, levelForSpeed } from '@/lib/traffic-style';
-import type { ConzoneSegment, TrafficSnapshot, TrafficSummary } from '@/lib/types';
+import type { ConzoneStatus, TrafficSnapshot, TrafficSummary } from '@/lib/types';
 import { usePollingResource } from '@/lib/use-polling-resource';
 
 const TrafficMap = dynamic(() => import('@/components/TrafficMap'), {
@@ -40,7 +40,7 @@ type Tab = 'ranking' | 'stats';
 
 export default function Dashboard({ initialSnapshot, initialSummary }: Props) {
   const [filters, setFilters] = useState<Filters>(INITIAL_FILTERS);
-  const [selected, setSelected] = useState<ConzoneSegment | null>(null);
+  const [selected, setSelected] = useState<ConzoneStatus | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [tab, setTab] = useState<Tab>('ranking');
 
@@ -55,20 +55,20 @@ export default function Dashboard({ initialSnapshot, initialSummary }: Props) {
     initialData: initialSummary,
   });
 
-  const segments = useMemo(() => traffic.data?.segments ?? [], [traffic.data]);
+  const conzones = useMemo(() => traffic.data?.conzones ?? [], [traffic.data]);
 
   const filtered = useMemo(() => {
     const query = filters.query.trim().toLowerCase();
-    return segments.filter((segment) => {
-      if (filters.route !== 'all' && segment.routeName !== filters.route) return false;
-      if (filters.direction !== 'all' && segment.direction !== filters.direction) return false;
-      if (!filters.levels.includes(levelForSpeed(segment.speed))) return false;
-      if (query && !`${segment.name} ${segment.routeName}`.toLowerCase().includes(query)) {
+    return conzones.filter((conzone) => {
+      if (filters.route !== 'all' && conzone.routeName !== filters.route) return false;
+      if (filters.direction !== 'all' && conzone.direction !== filters.direction) return false;
+      if (!filters.levels.includes(levelForSpeed(conzone.speed))) return false;
+      if (query && !`${conzone.name} ${conzone.routeName}`.toLowerCase().includes(query)) {
         return false;
       }
       return true;
     });
-  }, [segments, filters]);
+  }, [conzones, filters]);
 
   const updatedLabel = traffic.data
     ? `${traffic.data.stdHour.slice(0, 2)}:${traffic.data.stdHour.slice(2, 4)} 기준`
@@ -83,7 +83,7 @@ export default function Dashboard({ initialSnapshot, initialSummary }: Props) {
           </h1>
           <p className="text-[11px] text-slate-500">
             한국도로공사 공공데이터 · OpenStreetMap · {updatedLabel} ·{' '}
-            {filtered.length.toLocaleString('ko-KR')} / {segments.length.toLocaleString('ko-KR')} 구간
+            {filtered.length.toLocaleString('ko-KR')} / {conzones.length.toLocaleString('ko-KR')} 구간
           </p>
         </div>
 
@@ -119,7 +119,7 @@ export default function Dashboard({ initialSnapshot, initialSummary }: Props) {
 
       <div className="flex min-h-0 flex-1 flex-col-reverse lg:flex-row">
         <aside className="flex w-full shrink-0 flex-col gap-3 overflow-y-auto border-slate-800 p-3 lg:w-96 lg:border-r">
-          <StatsBar segments={filtered} summary={summary.data} />
+          <StatsBar conzones={filtered} summary={summary.data} />
           <FilterPanel
             filters={filters}
             routes={traffic.data?.routes ?? []}
@@ -154,10 +154,10 @@ export default function Dashboard({ initialSnapshot, initialSummary }: Props) {
 
           {tab === 'ranking' ? (
             <CongestionList
-              segments={filtered}
+              conzones={filtered}
               selectedId={selected?.id ?? null}
               onSelect={setSelected}
-              loading={traffic.loading && segments.length === 0}
+              loading={traffic.loading && conzones.length === 0}
             />
           ) : (
             <SummaryBreakdown summary={summary.data} />
@@ -166,10 +166,9 @@ export default function Dashboard({ initialSnapshot, initialSummary }: Props) {
 
         <section className="relative min-h-[55dvh] flex-1">
           <TrafficMap
-            segments={filtered}
+            conzones={filtered}
             selectedId={selected?.id ?? null}
             onSelect={setSelected}
-            focus={selected}
           />
           <div className="pointer-events-none absolute bottom-4 left-4 z-[1000] rounded-lg border border-slate-700 bg-slate-900/85 px-3 py-2">
             <p className="mb-1 text-[10px] uppercase tracking-wide text-slate-500">소통 상태</p>

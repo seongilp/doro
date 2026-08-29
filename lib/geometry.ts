@@ -1,22 +1,10 @@
 /**
- * 실시간 콘존 데이터를 지도에 그릴 수 있는 구간으로 변환한다.
- *
- * 콘존 경로(위경도)는 `scripts/build-conzone-paths.mjs`가 미리 계산해
- * `data/conzone-paths.json`에 넣어 둔다. 여기서는 콘존 id로 조회만 한다.
- * 노선이 개편되면 `npm run build:paths`로 다시 생성한다.
+ * 실시간 콘존 데이터를 화면에서 쓰는 상태 목록으로 변환한다.
+ * 좌표는 붙이지 않는다 — 경로는 지도 컴포넌트가 정적으로 들고 있다.
  */
 
-import conzonePathData from '@/data/conzone-paths.json';
-import type { ConzoneSegment, LatLng, RawConzone } from './types';
-
-interface ConzonePaths {
-  /** OpenStreetMap 도로 선형을 따라 잘라낸 경로 */
-  readonly roads: Readonly<Record<string, readonly LatLng[]>>;
-  /** 도로 선형을 못 얻어 양 끝 앵커를 직선으로 이은 경로 */
-  readonly straight: Readonly<Record<string, readonly LatLng[]>>;
-}
-
-const { roads, straight } = conzonePathData as unknown as ConzonePaths;
+import { conzonePaths } from './conzone-paths';
+import type { ConzoneStatus, RawConzone } from './types';
 
 interface AggregatedConzone {
   readonly row: RawConzone;
@@ -59,16 +47,17 @@ function mean(values: readonly number[]): number {
   return values.reduce((sum, v) => sum + v, 0) / values.length;
 }
 
-/** 실시간 콘존 행들을 지도에 그릴 수 있는 구간 목록으로 변환한다. */
-export function buildSegments(rows: readonly RawConzone[]): readonly ConzoneSegment[] {
-  const segments: ConzoneSegment[] = [];
+/** 그릴 수 있는(경로가 있는) 콘존만 골라 실시간 상태 목록으로 만든다. */
+export function buildConzoneStatuses(
+  rows: readonly RawConzone[],
+): readonly ConzoneStatus[] {
+  const statuses: ConzoneStatus[] = [];
 
   for (const item of aggregate(rows)) {
     const { row } = item;
-    const path = roads[row.conzoneId] ?? straight[row.conzoneId];
-    if (!path || path.length < 2) continue;
+    if (!conzonePaths[row.conzoneId]) continue;
 
-    segments.push({
+    statuses.push({
       id: row.conzoneId,
       name: row.conzoneName,
       routeNo: row.routeNo,
@@ -77,9 +66,8 @@ export function buildSegments(rows: readonly RawConzone[]): readonly ConzoneSegm
       speed: item.speeds.length > 0 ? Math.round(mean(item.speeds)) : -1,
       traffic: Math.round(mean(item.traffic)),
       grade: item.grade,
-      path,
     });
   }
 
-  return segments;
+  return statuses;
 }

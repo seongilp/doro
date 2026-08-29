@@ -1,6 +1,6 @@
 import { fetchExList } from './ex-api';
 import { withCache } from './memo-cache';
-import { buildSegments } from './geometry';
+import { buildConzoneStatuses } from './geometry';
 import { levelForSpeed } from './traffic-style';
 import type { RawConzone } from './types';
 
@@ -30,17 +30,17 @@ export async function getLandingStats(): Promise<LandingStats> {
         revalidate: 300,
       }),
     );
-    const segments = buildSegments(rows);
-    const measured = segments.filter((s) => s.speed > 0);
+    const conzones = buildConzoneStatuses(rows);
+    const measured = conzones.filter((c) => c.speed > 0);
     if (measured.length === 0) return FALLBACK;
 
     return {
-      segmentCount: segments.length,
-      routeCount: new Set(segments.map((s) => s.routeName)).size,
+      segmentCount: conzones.length,
+      routeCount: new Set(conzones.map((c) => c.routeName)).size,
       avgSpeed: Math.round(
-        measured.reduce((sum, s) => sum + s.speed, 0) / measured.length,
+        measured.reduce((sum, c) => sum + c.speed, 0) / measured.length,
       ),
-      jamCount: measured.filter((s) => levelForSpeed(s.speed) === 'jam').length,
+      jamCount: measured.filter((c) => levelForSpeed(c.speed) === 'jam').length,
       available: true,
     };
   } catch (error) {

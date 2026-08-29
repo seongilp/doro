@@ -1,10 +1,10 @@
 'use client';
 
-import type { ConzoneSegment, TrafficSummary } from '@/lib/types';
+import type { ConzoneStatus, TrafficSummary } from '@/lib/types';
 import { levelForSpeed } from '@/lib/traffic-style';
 
 interface Props {
-  readonly segments: readonly ConzoneSegment[];
+  readonly conzones: readonly ConzoneStatus[];
   readonly summary: TrafficSummary | null;
 }
 
@@ -19,14 +19,14 @@ interface Stat {
   readonly tone?: string;
 }
 
-export default function StatsBar({ segments, summary }: Props) {
-  const measured = segments.filter((s) => s.speed > 0);
+export default function StatsBar({ conzones, summary }: Props) {
+  const measured = conzones.filter((c) => c.speed > 0);
   const avgSpeed =
     measured.length > 0
-      ? Math.round(measured.reduce((sum, s) => sum + s.speed, 0) / measured.length)
+      ? Math.round(measured.reduce((sum, c) => sum + c.speed, 0) / measured.length)
       : 0;
-  const jamCount = measured.filter((s) => levelForSpeed(s.speed) === 'jam').length;
-  const slowCount = measured.filter((s) => levelForSpeed(s.speed) === 'slow').length;
+  const jamCount = measured.filter((c) => levelForSpeed(c.speed) === 'jam').length;
+  const slowCount = measured.filter((c) => levelForSpeed(c.speed) === 'slow').length;
 
   const stats: readonly Stat[] = [
     {

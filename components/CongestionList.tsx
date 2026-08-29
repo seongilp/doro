@@ -1,20 +1,20 @@
 'use client';
 
-import type { ConzoneSegment } from '@/lib/types';
+import type { ConzoneStatus } from '@/lib/types';
 import { styleForSpeed } from '@/lib/traffic-style';
 
 interface Props {
-  readonly segments: readonly ConzoneSegment[];
+  readonly conzones: readonly ConzoneStatus[];
   readonly selectedId: string | null;
-  readonly onSelect: (segment: ConzoneSegment) => void;
+  readonly onSelect: (conzone: ConzoneStatus) => void;
   /** 아직 첫 데이터를 기다리는 중인지. 빈 결과와 구분해서 보여준다. */
   readonly loading?: boolean;
 }
 
 const MAX_ITEMS = 40;
 
-export default function CongestionList({ segments, selectedId, onSelect, loading }: Props) {
-  const ranked = [...segments]
+export default function CongestionList({ conzones, selectedId, onSelect, loading }: Props) {
+  const ranked = [...conzones]
     .filter((s) => s.speed > 0)
     .sort((a, b) => a.speed - b.speed)
     .slice(0, MAX_ITEMS);
@@ -33,7 +33,7 @@ export default function CongestionList({ segments, selectedId, onSelect, loading
         const style = styleForSpeed(segment.speed);
         const selected = segment.id === selectedId;
         return (
-          <li key={`${segment.id}-${segment.direction}`}>
+          <li key={segment.id}>
             <button
               type="button"
               onClick={() => onSelect(segment)}

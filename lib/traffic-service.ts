@@ -4,7 +4,7 @@
  */
 
 import { fetchExList } from './ex-api';
-import { buildSegments } from './geometry';
+import { buildConzoneStatuses } from './geometry';
 import { withCache } from './memo-cache';
 import type {
   RawConzone,
@@ -50,8 +50,8 @@ export async function getTrafficSnapshot(): Promise<TrafficSnapshot> {
     throw new EmptyResponseError('도로공사에서 반환한 실시간 소통정보가 비어 있습니다.');
   }
 
-  const segments = buildSegments(rows);
-  const routes = [...new Set(segments.map((s) => s.routeName))].sort((a, b) =>
+  const conzones = buildConzoneStatuses(rows);
+  const routes = [...new Set(conzones.map((c) => c.routeName))].sort((a, b) =>
     a.localeCompare(b, 'ko'),
   );
 
@@ -59,7 +59,7 @@ export async function getTrafficSnapshot(): Promise<TrafficSnapshot> {
     updatedAt: new Date().toISOString(),
     stdDate: rows[0].stdDate,
     stdHour: rows[0].stdHour,
-    segments,
+    conzones,
     routes,
   };
 }

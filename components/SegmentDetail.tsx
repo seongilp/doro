@@ -1,10 +1,10 @@
 'use client';
 
-import type { ConzoneSegment } from '@/lib/types';
+import type { ConzoneStatus } from '@/lib/types';
 import { styleForSpeed } from '@/lib/traffic-style';
 
 interface Props {
-  readonly segment: ConzoneSegment;
+  readonly segment: ConzoneStatus;
   readonly onClose: () => void;
 }
 

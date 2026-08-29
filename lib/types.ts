@@ -39,8 +39,12 @@ export interface RawTrafficAll {
   readonly sumDate: string;
 }
 
-/** 지도에 그릴 수 있는 콘존 구간 */
-export interface ConzoneSegment {
+/**
+ * 콘존 하나의 실시간 상태. 좌표는 들어 있지 않다.
+ * 도로 좌표는 변하지 않으므로 지도 청크에 정적으로 실려 브라우저에 영구 캐시되고,
+ * 1분마다 오가는 것은 이 값들뿐이다.
+ */
+export interface ConzoneStatus {
   readonly id: string;
   readonly name: string;
   readonly routeNo: string;
@@ -49,14 +53,16 @@ export interface ConzoneSegment {
   readonly speed: number;
   readonly traffic: number;
   readonly grade: number;
-  readonly path: readonly LatLng[];
 }
+
+/** 콘존 id → 도로 경로. `data/conzone-paths.json`에서 온다. */
+export type ConzonePathMap = Readonly<Record<string, readonly LatLng[]>>;
 
 export interface TrafficSnapshot {
   readonly updatedAt: string;
   readonly stdDate: string;
   readonly stdHour: string;
-  readonly segments: readonly ConzoneSegment[];
+  readonly conzones: readonly ConzoneStatus[];
   readonly routes: readonly string[];
 }
 
