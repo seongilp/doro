@@ -4,7 +4,7 @@
  */
 
 import { fetchExList } from './ex-api';
-import { buildConzoneStatuses } from './geometry';
+import { buildConzoneValues } from './geometry';
 import { withCache } from './memo-cache';
 import type {
   RawConzone,
@@ -12,7 +12,7 @@ import type {
   SummaryBucket,
   TrafficSummary,
 } from './types';
-import { encodeSnapshot, type WireSnapshot } from './wire';
+import type { WireSnapshot } from './wire';
 
 /** VDS 소통정보는 약 1분 주기로 갱신된다. */
 export const TRAFFIC_REVALIDATE_SECONDS = 60;
@@ -50,12 +50,12 @@ export async function getTrafficSnapshot(): Promise<WireSnapshot> {
     throw new EmptyResponseError('도로공사에서 반환한 실시간 소통정보가 비어 있습니다.');
   }
 
-  return encodeSnapshot({
+  return {
     updatedAt: new Date().toISOString(),
     stdDate: rows[0].stdDate,
     stdHour: rows[0].stdHour,
-    conzones: buildConzoneStatuses(rows),
-  });
+    values: buildConzoneValues(rows),
+  };
 }
 
 function sumBy(

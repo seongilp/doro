@@ -523,6 +523,30 @@ async function main() {
     JSON.stringify({ roads, straight }),
   );
 
+  // 콘존 이름·노선은 매분 바뀌지 않는다. 좌표와 마찬가지로 정적 파일로 빼서
+  // 불변 청크에 실으면, 실시간 응답은 속도·교통량·등급만 실어 나르면 된다.
+  const drawable = new Set([...Object.keys(roads), ...Object.keys(straight)]);
+  const routeList = [];
+  const routeIndex = new Map();
+  const entries = conzones
+    .filter((zone) => drawable.has(zone.conzoneId))
+    .sort((a, b) => a.conzoneId.localeCompare(b.conzoneId))
+    .map((zone) => {
+      const key = `${zone.routeName}|${zone.routeNo}`;
+      let route = routeIndex.get(key);
+      if (route === undefined) {
+        route = routeList.push([zone.routeName, zone.routeNo]) - 1;
+        routeIndex.set(key, route);
+      }
+      return [zone.conzoneId, zone.conzoneName, route, zone.updownTypeCode === 'E' ? 1 : 0];
+    });
+
+  await writeFile(
+    join(ROOT, 'data/conzone-index.json'),
+    JSON.stringify({ routes: routeList, conzones: entries }),
+  );
+  console.log('정적 색인', entries.length, '콘존 /', routeList.length, '노선');
+
   const pointCount = Object.values(roads).reduce((sum, p) => sum + p.length, 0);
   console.log('콘존', stats.total);
   console.log('도로 선형 적용', stats.onRoad, `(${((100 * stats.onRoad) / stats.total).toFixed(1)}%)`);

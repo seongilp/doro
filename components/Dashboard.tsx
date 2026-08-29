@@ -9,7 +9,8 @@ import StatsBar from '@/components/StatsBar';
 import SummaryBreakdown from '@/components/SummaryBreakdown';
 import { LEVELS, levelForSpeed } from '@/lib/traffic-style';
 import type { ConzoneStatus, TrafficSummary } from '@/lib/types';
-import { decodeSnapshot, type WireSnapshot } from '@/lib/wire';
+import { routeNames } from '@/lib/conzone-index';
+import { decodeConzones, type WireSnapshot } from '@/lib/wire';
 import { usePollingResource } from '@/lib/use-polling-resource';
 
 const TrafficMap = dynamic(() => import('@/components/TrafficMap'), {
@@ -56,12 +57,11 @@ export default function Dashboard({ initialSnapshot, initialSummary }: Props) {
     initialData: initialSummary,
   });
 
-  // 전송용 튜플을 화면에서 쓰는 형태로 푼다. 스냅숏이 바뀔 때만 다시 계산한다.
-  const snapshot = useMemo(
-    () => (traffic.data ? decodeSnapshot(traffic.data) : null),
+  // 정적 색인과 실시간 값을 합친다. 스냅숏이 바뀔 때만 다시 계산한다.
+  const conzones = useMemo(
+    () => (traffic.data ? decodeConzones(traffic.data.values) : []),
     [traffic.data],
   );
-  const conzones = useMemo(() => snapshot?.conzones ?? [], [snapshot]);
 
   const filtered = useMemo(() => {
     const query = filters.query.trim().toLowerCase();
@@ -76,8 +76,8 @@ export default function Dashboard({ initialSnapshot, initialSummary }: Props) {
     });
   }, [conzones, filters]);
 
-  const updatedLabel = snapshot
-    ? `${snapshot.stdHour.slice(0, 2)}:${snapshot.stdHour.slice(2, 4)} 기준`
+  const updatedLabel = traffic.data
+    ? `${traffic.data.stdHour.slice(0, 2)}:${traffic.data.stdHour.slice(2, 4)} 기준`
     : '—';
 
   return (
@@ -128,7 +128,7 @@ export default function Dashboard({ initialSnapshot, initialSummary }: Props) {
           <StatsBar conzones={filtered} summary={summary.data} />
           <FilterPanel
             filters={filters}
-            routes={snapshot?.routeNames ?? []}
+            routes={routeNames}
             onChange={setFilters}
           />
 

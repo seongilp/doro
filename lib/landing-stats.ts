@@ -1,6 +1,7 @@
 import { fetchExList } from './ex-api';
 import { withCache } from './memo-cache';
-import { buildConzoneStatuses } from './geometry';
+import { buildConzoneValues } from './geometry';
+import { conzoneMeta } from './conzone-index';
 import { levelForSpeed } from './traffic-style';
 import type { RawConzone } from './types';
 
@@ -30,17 +31,17 @@ export async function getLandingStats(): Promise<LandingStats> {
         revalidate: 300,
       }),
     );
-    const conzones = buildConzoneStatuses(rows);
-    const measured = conzones.filter((c) => c.speed > 0);
+    const values = buildConzoneValues(rows).filter((v) => v !== null);
+    const measured = values.filter((v) => v[0] > 0);
     if (measured.length === 0) return FALLBACK;
 
     return {
-      segmentCount: conzones.length,
-      routeCount: new Set(conzones.map((c) => c.routeName)).size,
+      segmentCount: values.length,
+      routeCount: new Set(conzoneMeta.map((m) => m.routeName)).size,
       avgSpeed: Math.round(
-        measured.reduce((sum, c) => sum + c.speed, 0) / measured.length,
+        measured.reduce((sum, v) => sum + v[0], 0) / measured.length,
       ),
-      jamCount: measured.filter((c) => levelForSpeed(c.speed) === 'jam').length,
+      jamCount: measured.filter((v) => levelForSpeed(v[0]) === 'jam').length,
       available: true,
     };
   } catch (error) {

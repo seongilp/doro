@@ -1,45 +1,18 @@
 /**
- * 실시간 콘존 데이터를 화면에서 쓰는 상태 목록으로 변환한다.
- * 좌표는 붙이지 않는다 — 경로는 지도 컴포넌트가 정적으로 들고 있다.
+ * 실시간 콘존 데이터를 전송용 값 배열로 줄인다.
+ *
+ * 콘존의 이름·노선은 정적 색인(`lib/conzone-index.ts`)에 있으므로 여기서는
+ * 매분 바뀌는 값만 뽑는다. 결과 배열은 색인과 같은 순서이며, 해당 콘존의
+ * 관측치가 없으면 null이다.
  */
 
-import { conzonePaths } from './conzone-paths';
-import type { ConzoneStatus, RawConzone } from './types';
+import { positionById } from './conzone-index';
+import type { ConzoneValues, RawConzone } from './types';
 
-interface AggregatedConzone {
-  readonly row: RawConzone;
+interface Accumulator {
   readonly speeds: number[];
   readonly traffic: number[];
   grade: number;
-}
-
-/** 한 콘존에 여러 VDS 관측치가 오므로 평균 속도·평균 교통량, 최악 혼잡등급으로 합친다. */
-function aggregate(rows: readonly RawConzone[]): readonly AggregatedConzone[] {
-  const byId = new Map<string, AggregatedConzone>();
-
-  for (const row of rows) {
-    const speed = Number(row.speed);
-    const traffic = Number(row.trafficAmout);
-    const grade = Number(row.grade);
-    // 속도 -1은 미수집을 뜻하므로 평균에서 제외한다.
-    const usableSpeed = Number.isFinite(speed) && speed > 0;
-
-    const existing = byId.get(row.conzoneId);
-    if (existing) {
-      if (usableSpeed) existing.speeds.push(speed);
-      if (Number.isFinite(traffic)) existing.traffic.push(traffic);
-      if (Number.isFinite(grade)) existing.grade = Math.max(existing.grade, grade);
-    } else {
-      byId.set(row.conzoneId, {
-        row,
-        speeds: usableSpeed ? [speed] : [],
-        traffic: Number.isFinite(traffic) ? [traffic] : [],
-        grade: Number.isFinite(grade) ? grade : 1,
-      });
-    }
-  }
-
-  return [...byId.values()];
 }
 
 function mean(values: readonly number[]): number {
@@ -47,27 +20,40 @@ function mean(values: readonly number[]): number {
   return values.reduce((sum, v) => sum + v, 0) / values.length;
 }
 
-/** 그릴 수 있는(경로가 있는) 콘존만 골라 실시간 상태 목록으로 만든다. */
-export function buildConzoneStatuses(
+/**
+ * 한 콘존에 여러 VDS 관측치가 오므로 평균 속도·평균 교통량, 최악 혼잡등급으로 합친다.
+ * 속도 -1은 미수집을 뜻하므로 평균에서 제외한다.
+ */
+export function buildConzoneValues(
   rows: readonly RawConzone[],
-): readonly ConzoneStatus[] {
-  const statuses: ConzoneStatus[] = [];
+): readonly (ConzoneValues | null)[] {
+  const acc = new Array<Accumulator | null>(positionById.size).fill(null);
 
-  for (const item of aggregate(rows)) {
-    const { row } = item;
-    if (!conzonePaths[row.conzoneId]) continue;
+  for (const row of rows) {
+    const at = positionById.get(row.conzoneId);
+    if (at === undefined) continue;
 
-    statuses.push({
-      id: row.conzoneId,
-      name: row.conzoneName,
-      routeNo: row.routeNo,
-      routeName: row.routeName,
-      direction: row.updownTypeCode === 'E' ? 'E' : 'S',
-      speed: item.speeds.length > 0 ? Math.round(mean(item.speeds)) : -1,
-      traffic: Math.round(mean(item.traffic)),
-      grade: item.grade,
-    });
+    const speed = Number(row.speed);
+    const traffic = Number(row.trafficAmout);
+    const grade = Number(row.grade);
+
+    let entry = acc[at];
+    if (!entry) {
+      entry = { speeds: [], traffic: [], grade: 1 };
+      acc[at] = entry;
+    }
+    if (Number.isFinite(speed) && speed > 0) entry.speeds.push(speed);
+    if (Number.isFinite(traffic)) entry.traffic.push(traffic);
+    if (Number.isFinite(grade)) entry.grade = Math.max(entry.grade, grade);
   }
 
-  return statuses;
+  return acc.map((entry) =>
+    entry
+      ? ([
+          entry.speeds.length > 0 ? Math.round(mean(entry.speeds)) : -1,
+          Math.round(mean(entry.traffic)),
+          entry.grade,
+        ] as ConzoneValues)
+      : null,
+  );
 }

@@ -39,10 +39,12 @@ export interface RawTrafficAll {
   readonly sumDate: string;
 }
 
+/** 매분 바뀌는 값: [속도, 교통량, 혼잡등급] */
+export type ConzoneValues = readonly [number, number, number];
+
 /**
- * 콘존 하나의 실시간 상태. 좌표는 들어 있지 않다.
- * 도로 좌표는 변하지 않으므로 지도 청크에 정적으로 실려 브라우저에 영구 캐시되고,
- * 1분마다 오가는 것은 이 값들뿐이다.
+ * 화면에서 쓰는 콘존 하나의 상태.
+ * 정적 정보(lib/conzone-index.ts)와 실시간 값(ConzoneValues)을 합친 결과다.
  */
 export interface ConzoneStatus {
   readonly id: string;
