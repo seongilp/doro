@@ -12,11 +12,10 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { osmNameForRoute } from './osm-routes.mjs';
+import { osmNamesForRoute } from './osm-routes.mjs';
 import {
   cumulativeDistances,
   haversineKm,
-  pointAt,
   simplify,
   slice,
   snapToPolyline,
@@ -31,8 +30,18 @@ const KOREA_BBOX = '33.0,124.5,38.7,131.9';
 const MAX_SNAP_KM = 3;
 /** 차로(컴포넌트)를 바꿀 때 물리는 비용(km 환산). 잦은 차로 전환을 억제한다. */
 const SWITCH_PENALTY_KM = 4;
+/** 끝점 앵커를 못 찾았을 때 관측 비용 대신 쓰는 값. */
+const MISSING_ANCHOR_KM = 1.5;
 /** 콘존 하나가 이보다 길면 앵커 배치가 어긋난 것으로 보고 버린다. */
 const MAX_SPAN_KM = 40;
+/** 이보다 짧은 도로 조각은 노선 선형으로 쓰지 않는다. */
+const MIN_COMPONENT_KM = 0.3;
+/** 도로 선형을 못 얻었을 때 직선으로 대체할 수 있는 최대 길이. */
+const MAX_STRAIGHT_KM = 25;
+
+/** 파일 크기를 줄이려고 좌표를 소수 5자리로 자른다(약 1m). */
+const round = (path) =>
+  path.map(([lat, lng]) => [Number(lat.toFixed(5)), Number(lng.toFixed(5))]);
 /** 폴리라인 단순화 허용 오차(약 20m). */
 const SIMPLIFY_TOLERANCE_KM = 0.02;
 
@@ -217,12 +226,16 @@ function stitchWays(ways) {
 
     if (points.length >= 2) {
       const cum = cumulativeDistances(points);
-      components.push({
-        points,
-        cum,
-        length: cum[cum.length - 1],
-        closed: haversineKm(points[0], points[points.length - 1]) < 0.5,
-      });
+      // 길이가 없는 조각(램프 흔적 등)은 스냅을 가로채므로 버린다.
+      const length = cum[cum.length - 1];
+      if (length >= MIN_COMPONENT_KM) {
+        components.push({
+          points,
+          cum,
+          length,
+          closed: haversineKm(points[0], points[points.length - 1]) < 0.5,
+        });
+      }
     }
   }
 
@@ -277,44 +290,46 @@ function snapCandidates(components, point) {
 }
 
 /**
- * 노선 순서를 따라 컴포넌트를 배정한다.
+ * 콘존마다 어느 도로 조각(컴포넌트) 위에 놓을지 정한다.
  *
- * IC 앵커는 상·하행 차로 사이에 찍혀 있어 "가장 가까운 컴포넌트"만 고르면
- * 구간마다 차로가 번갈아 잡힌다. 스냅 거리(km)를 관측 비용, 차로 변경을
+ * 콘존 하나는 반드시 한 조각 위에 있어야 하므로 배정 단위는 노드가 아니라 콘존이다.
+ * IC 앵커는 상·하행 차로 사이에 찍혀 있어 "가장 가까운 조각"만 고르면 콘존마다
+ * 차로가 번갈아 잡힌다. 그래서 스냅 거리를 관측 비용, 조각 변경을
  * SWITCH_PENALTY_KM 비용으로 두고 Viterbi로 전체 비용이 최소인 배정을 찾는다.
  */
-function assignComponents(candidateList) {
+function assignComponents(pairs) {
   const states = new Set();
-  for (const candidates of candidateList) {
-    for (const index of candidates.keys()) states.add(index);
+  for (const [from, to] of pairs) {
+    for (const index of from.keys()) states.add(index);
+    for (const index of to.keys()) states.add(index);
   }
-  if (states.size === 0) return candidateList.map(() => null);
+  if (states.size === 0) return pairs.map(() => null);
   const stateList = [...states];
 
-  const emission = (candidates, state) => {
-    if (candidates.size === 0) return 0; // 앵커가 없는 노드는 관측 비용 없음
-    const hit = candidates.get(state);
-    return hit ? hit.distKm : MAX_SNAP_KM * 2;
+  const emission = ([from, to], state) => {
+    if (from.size === 0 && to.size === 0) return 0; // 앵커가 없으면 정보 없음
+    const a = from.size === 0 ? MISSING_ANCHOR_KM : (from.get(state)?.distKm ?? MAX_SNAP_KM * 2);
+    const b = to.size === 0 ? MISSING_ANCHOR_KM : (to.get(state)?.distKm ?? MAX_SNAP_KM * 2);
+    return a + b;
   };
 
-  let cost = stateList.map((state) => emission(candidateList[0], state));
+  let cost = stateList.map((state) => emission(pairs[0], state));
   const back = [];
 
-  for (let i = 1; i < candidateList.length; i += 1) {
+  for (let i = 1; i < pairs.length; i += 1) {
     const nextCost = [];
     const choice = [];
     for (let s = 0; s < stateList.length; s += 1) {
       let bestCost = Infinity;
       let bestPrev = 0;
       for (let p = 0; p < stateList.length; p += 1) {
-        const transition = p === s ? 0 : SWITCH_PENALTY_KM;
-        const total = cost[p] + transition;
+        const total = cost[p] + (p === s ? 0 : SWITCH_PENALTY_KM);
         if (total < bestCost) {
           bestCost = total;
           bestPrev = p;
         }
       }
-      nextCost.push(bestCost + emission(candidateList[i], stateList[s]));
+      nextCost.push(bestCost + emission(pairs[i], stateList[s]));
       choice.push(bestPrev);
     }
     cost = nextCost;
@@ -322,16 +337,12 @@ function assignComponents(candidateList) {
   }
 
   let current = cost.indexOf(Math.min(...cost));
-  const assigned = new Array(candidateList.length);
-  for (let i = candidateList.length - 1; i >= 0; i -= 1) {
+  const assigned = new Array(pairs.length);
+  for (let i = pairs.length - 1; i >= 0; i -= 1) {
     assigned[i] = stateList[current];
     if (i > 0) current = back[i - 1][current];
   }
-
-  return assigned.map((state, i) => {
-    const hit = candidateList[i].get(state);
-    return hit ? { componentIndex: state, along: hit.along } : null;
-  });
+  return assigned;
 }
 
 /** 콘존명을 시점·종점으로 나눈다. 구분자는 '-' 또는 '~'. */
@@ -352,6 +363,7 @@ async function main() {
   const anchors = buildAnchorIndex(units, junctionsJson);
   const routes = buildRouteIndex(waysJson);
 
+  const routeNames = [...routes.keys()];
   const conzones = [...new Map(conzoneJson.list.map((r) => [r.conzoneId, r])).values()];
 
   // 노선+방향별로 콘존 순번대로 정렬한다.
@@ -363,7 +375,8 @@ async function main() {
     else groups.set(key, [zone]);
   }
 
-  const paths = {};
+  const roads = {};
+  const straight = {};
   const stats = {
     total: conzones.length,
     onRoad: 0,
@@ -373,98 +386,88 @@ async function main() {
     degenerate: 0,
     tooLong: 0,
     unresolved: 0,
+    straight: 0,
   };
   const missingRoutes = new Set();
 
   for (const bucket of groups.values()) {
     const ordered = [...bucket].sort((a, b) => a.conzoneId.localeCompare(b.conzoneId));
     const routeName = ordered[0].routeName;
-    const components = routes.get(osmNameForRoute(routeName));
+    const components = osmNamesForRoute(routeName, routeNames).flatMap(
+      (name) => routes.get(name) ?? [],
+    );
 
-    if (!components || components.length === 0) {
+    if (components.length === 0) {
       missingRoutes.add(routeName);
       stats.noRoute += ordered.length;
       continue;
     }
 
-    // 콘존 체인이 중간에 끊기는 노선이 있어, 각 콘존의 시점·종점을 그대로 나열한다.
-    // (이웃 콘존이 끝점을 공유한다고 가정하면 끊긴 지점에서 엉뚱한 구간이 만들어진다.)
-    const nodeNames = ordered.flatMap((zone) => {
-      const parts = splitConzoneName(zone.conzoneName);
-      return parts ? [parts[0], parts[1]] : ['', ''];
+    // 콘존마다 시점·종점 앵커를 각 도로 조각에 스냅해 후보를 만든다.
+    const pairs = ordered.map((zone) => {
+      const parts = splitConzoneName(zone.conzoneName) ?? ['', ''];
+      return parts.map((name) => {
+        if (!name) return new Map();
+        const point = findAnchor(anchors, name, routeName);
+        return point ? snapCandidates(components, point) : new Map();
+      });
     });
 
-    const candidateList = nodeNames.map((name) => {
-      if (!name) return new Map();
-      const point = findAnchor(anchors, name, routeName);
-      return point ? snapCandidates(components, point) : new Map();
-    });
-
-    const snapped = assignComponents(candidateList);
-
-    if (snapped.every((hit) => hit === null)) {
+    const assigned = assignComponents(pairs);
+    if (assigned.every((c) => c === null)) {
       stats.noAnchor += ordered.length;
       continue;
     }
 
-    // 좌표를 모르는 노드는, 같은 컴포넌트에 얹힌 이웃 앵커 사이에서
-    // 주행거리로 보간한다. 컴포넌트가 다르면 보간하지 않는다.
-    for (let i = 0; i < snapped.length; i += 1) {
-      if (snapped[i]) continue;
+    // 배정된 조각 위에서의 주행거리. 앵커가 없는 끝점은 null로 남긴다.
+    const along = pairs.flatMap(([from, to], i) => [
+      from.get(assigned[i])?.along ?? null,
+      to.get(assigned[i])?.along ?? null,
+    ]);
+    const componentOf = (i) => assigned[Math.floor(i / 2)];
+
+    // 같은 조각에 얹힌 이웃 앵커 사이에서 주행거리로 보간한다.
+    for (let i = 0; i < along.length; i += 1) {
+      if (along[i] != null) continue;
       let before = i - 1;
-      while (before >= 0 && !snapped[before]) before -= 1;
+      while (before >= 0 && along[before] == null) before -= 1;
       let after = i + 1;
-      while (after < snapped.length && !snapped[after]) after += 1;
-      if (before < 0 || after >= snapped.length) continue;
-      if (snapped[before].componentIndex !== snapped[after].componentIndex) continue;
+      while (after < along.length && along[after] == null) after += 1;
+      if (before < 0 || after >= along.length) continue;
+      if (componentOf(before) !== componentOf(i) || componentOf(after) !== componentOf(i)) continue;
       const t = (i - before) / (after - before);
-      snapped[i] = {
-        componentIndex: snapped[before].componentIndex,
-        along: snapped[before].along + (snapped[after].along - snapped[before].along) * t,
-      };
+      along[i] = along[before] + (along[after] - along[before]) * t;
     }
 
-    // 시퀀스 양 끝의 빈 노드는 이웃 두 앵커의 간격을 이어서 외삽한다.
-    const extrapolate = (indices, knownA, knownB) => {
-      const slope =
-        (snapped[knownB].along - snapped[knownA].along) / (knownB - knownA);
-      const component = components[snapped[knownA].componentIndex];
-      for (const i of indices) {
-        const along = snapped[knownA].along + slope * (i - knownA);
-        snapped[i] = {
-          componentIndex: snapped[knownA].componentIndex,
-          along: Math.max(0, Math.min(component.length, along)),
-        };
+    // 시퀀스 양 끝의 빈 값은 이웃 두 앵커의 간격을 이어서 외삽한다.
+    const known = along.map((v, i) => (v == null ? -1 : i)).filter((i) => i >= 0);
+    if (known.length >= 2) {
+      const extrapolate = (indices, a, b) => {
+        const slope = (along[b] - along[a]) / (b - a);
+        for (const i of indices) {
+          if (componentOf(i) !== componentOf(a)) continue;
+          const component = components[componentOf(a)];
+          along[i] = Math.max(0, Math.min(component.length, along[a] + slope * (i - a)));
+        }
+      };
+      const [first, second] = known;
+      const last = known[known.length - 1];
+      const secondLast = known[known.length - 2];
+      if (first > 0) {
+        extrapolate(Array.from({ length: first }, (_, i) => first - 1 - i), first, second);
       }
-    };
-
-    const knownIndices = snapped
-      .map((hit, i) => (hit ? i : -1))
-      .filter((i) => i >= 0);
-
-    if (knownIndices.length >= 2) {
-      const [first, second] = knownIndices;
-      const last = knownIndices[knownIndices.length - 1];
-      const secondLast = knownIndices[knownIndices.length - 2];
-
-      if (first > 0 && snapped[first].componentIndex === snapped[second].componentIndex) {
+      if (last < along.length - 1) {
         extrapolate(
-          Array.from({ length: first }, (_, i) => i).reverse(),
-          first,
-          second,
-        );
-      }
-      if (
-        last < snapped.length - 1 &&
-        snapped[last].componentIndex === snapped[secondLast].componentIndex
-      ) {
-        extrapolate(
-          Array.from({ length: snapped.length - 1 - last }, (_, i) => last + 1 + i),
+          Array.from({ length: along.length - 1 - last }, (_, i) => last + 1 + i),
           secondLast,
           last,
         );
       }
     }
+
+    const snapped = along.map((value, i) =>
+      value == null ? null : { componentIndex: componentOf(i), along: value },
+    );
 
     ordered.forEach((zone, i) => {
       const from = snapped[i * 2];
@@ -496,17 +499,31 @@ async function main() {
       );
       if (path.length < 2) return;
 
-      paths[zone.conzoneId] = path.map(([lat, lng]) => [
-        Number(lat.toFixed(5)),
-        Number(lng.toFixed(5)),
-      ]);
+      roads[zone.conzoneId] = round(path);
       stats.onRoad += 1;
+    });
+
+    // 도로 선형을 못 만든 콘존은, 양 끝 앵커가 모두 실제로 확인될 때만 직선으로 남긴다.
+    // (보간한 좌표로 직선을 그으면 실제와 수십 km 어긋난 선이 생긴다.)
+    ordered.forEach((zone) => {
+      if (roads[zone.conzoneId]) return;
+      const [startName, endName] = splitConzoneName(zone.conzoneName) ?? ['', ''];
+      const a = startName ? findAnchor(anchors, startName, routeName) : null;
+      const b = endName ? findAnchor(anchors, endName, routeName) : null;
+      if (!a || !b) return;
+      const span = haversineKm(a, b);
+      if (span < 0.05 || span > MAX_STRAIGHT_KM) return;
+      straight[zone.conzoneId] = round([a, b]);
+      stats.straight += 1;
     });
   }
 
-  await writeFile(join(ROOT, 'data/conzone-paths.json'), JSON.stringify(paths));
+  await writeFile(
+    join(ROOT, 'data/conzone-paths.json'),
+    JSON.stringify({ roads, straight }),
+  );
 
-  const pointCount = Object.values(paths).reduce((sum, p) => sum + p.length, 0);
+  const pointCount = Object.values(roads).reduce((sum, p) => sum + p.length, 0);
   console.log('콘존', stats.total);
   console.log('도로 선형 적용', stats.onRoad, `(${((100 * stats.onRoad) / stats.total).toFixed(1)}%)`);
   console.log(
@@ -518,6 +535,7 @@ async function main() {
     '| 길이 0', stats.degenerate,
     '| 과다 길이', stats.tooLong,
   );
+  console.log('직선 대체', stats.straight);
   console.log('평균 점 개수', (pointCount / Math.max(stats.onRoad, 1)).toFixed(1));
   if (missingRoutes.size > 0) {
     console.log('OSM에서 못 찾은 노선:', [...missingRoutes].join(', '));

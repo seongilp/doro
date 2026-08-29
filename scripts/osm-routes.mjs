@@ -26,7 +26,6 @@ export const ROUTE_NAME_OVERRIDES = Object.freeze({
   '중부내륙지선': '중부내륙고속도로지선',
   '중앙선지선': '중앙고속도로지선',
   '부산외곽선': '부산외곽순환고속도로',
-  '새만금전주선': '새만금포항고속도로',
 });
 
 /** "남해선(순천-부산)" → "남해고속도로" */
@@ -35,4 +34,15 @@ export function osmNameForRoute(routeName) {
   if (override) return override;
   const base = routeName.replace(/\(.*\)/, '').replace(/선$/, '');
   return `${base}고속도로`;
+}
+
+/**
+ * 노선 하나가 OSM에서는 여러 이름으로 나뉘어 있을 수 있다.
+ * 예) 중앙선의 부산 구간은 "중앙고속도로"가 아니라 "중앙고속도로지선"이다.
+ * 기본 이름으로 시작하는 OSM 이름을 모두 후보로 삼는다.
+ */
+export function osmNamesForRoute(routeName, availableNames) {
+  const primary = osmNameForRoute(routeName);
+  const matched = availableNames.filter((name) => name.startsWith(primary));
+  return matched.length > 0 ? matched : [];
 }

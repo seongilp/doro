@@ -24,7 +24,6 @@ export function usePollingResource<T>(
   const aborted = useRef(false);
 
   const load = useCallback(async () => {
-    setLoading(true);
     try {
       const response = await fetch(url, { cache: 'no-store' });
       const payload = await response.json();
@@ -48,19 +47,24 @@ export function usePollingResource<T>(
 
   useEffect(() => {
     aborted.current = false;
+    // 데이터 페칭 이펙트. 상태 갱신은 모두 await 이후에 일어나므로 렌더 중 갱신이 아니다.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
     return () => {
       aborted.current = true;
     };
   }, [load, nonce]);
 
+  const trigger = useCallback(() => {
+    setLoading(true);
+    setNonce((n) => n + 1);
+  }, []);
+
   useEffect(() => {
     if (!enabled) return;
-    const timer = setInterval(() => setNonce((n) => n + 1), intervalMs);
+    const timer = setInterval(trigger, intervalMs);
     return () => clearInterval(timer);
-  }, [enabled, intervalMs]);
+  }, [enabled, intervalMs, trigger]);
 
-  const refresh = useCallback(() => setNonce((n) => n + 1), []);
-
-  return { data, error, loading, lastFetchedAt, refresh };
+  return { data, error, loading, lastFetchedAt, refresh: trigger };
 }
